@@ -33,7 +33,9 @@ class Embedding(Module):
         self.num_embeddings = num_embeddings # Vocab size
         self.embedding_dim  = embedding_dim  # Embedding Dimension
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        self.weights = self.add_parameter(
+            "weights", tensor_from_numpy(np.random.randn(num_embeddings, embedding_dim).astype(np.float32), backend=backend)
+        )
         ### END ASSIGN3_2
     
     def forward(self, x: Tensor):
@@ -47,7 +49,10 @@ class Embedding(Module):
         """
         bs, seq_len = x.shape
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        one_hot_x = one_hot(x, self.num_embeddings)
+        one_hot_reshaped = one_hot_x.view(bs * seq_len, self.num_embeddings)  # (bs*seq_len, num_embeddings)
+        result = one_hot_reshaped @ self.weights.value  # (bs*seq_len, embedding_dim)
+        return result.view(bs, seq_len, self.embedding_dim)  # (bs, seq_len, embedding_dim)
         ### END ASSIGN3_2
 
     
@@ -73,7 +78,11 @@ class Dropout(Module):
         Note: If p_dropout is 0, directly return the input tensor. Otherwise, the random seed may cause problems
         """
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        if self.p_dropout == 0.0 or self.p_dropout is None or not self.training:
+            return x
+        mask = (np.random.rand(*x.shape) >= self.p_dropout).astype(np.float32)
+        scale = 1.0 / (1.0 - self.p_dropout)
+        return x * tensor_from_numpy(mask, backend=x.backend) * scale
         ### END ASSIGN3_2
 
 
@@ -93,7 +102,16 @@ class Linear(Module):
         """
         self.out_size = out_size
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        bound = 1 / (in_size ** 0.5)
+        self.weights = self.add_parameter(
+            "weights", 2 * bound * rand((in_size, out_size), backend=backend) - bound
+        )
+        if bias:
+            self.bias = self.add_parameter(
+                "bias", 2 * bound * rand((out_size,), backend=backend) - bound
+            )
+        else:
+            self.bias = None
         ### END ASSIGN3_2
 
     def forward(self, x: Tensor):
@@ -107,7 +125,10 @@ class Linear(Module):
         """
         batch, in_size = x.shape
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        out = x @ self.weights.value
+        if self.bias is not None:
+            out = out + self.bias.value
+        return out
         ### END ASSIGN3_2
 
 
@@ -127,7 +148,12 @@ class LayerNorm1d(Module):
         self.dim = dim
         self.eps = eps
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        self.weights = self.add_parameter(
+            "weights", ones((dim,), backend=backend)
+        )
+        self.bias = self.add_parameter(
+            "bias", zeros((dim,), backend=backend)
+        )
         ### END ASSIGN3_2
 
     def forward(self, x: Tensor) -> Tensor:
@@ -143,5 +169,8 @@ class LayerNorm1d(Module):
         """
         batch, dim = x.shape
         ### BEGIN ASSIGN3_2
-        raise NotImplementedError
+        mean = x.mean(dim=1)
+        variance = ((x - mean) ** 2).mean(dim=1)
+        x_normalized = (x - mean) / ((variance + self.eps) ** 0.5)
+        return x_normalized * self.weights.value + self.bias.value
         ### END ASSIGN3_2
