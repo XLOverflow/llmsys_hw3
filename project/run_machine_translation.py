@@ -154,6 +154,73 @@ def get_tokenizer(examples, vocab_size, src_key, tgt_key, workdir):
     return tokenizer
 
 
+def save_checkpoint(workdir, epoch, model, optimizer):
+    """
+    Save model and optimizer state to checkpoint file.
+
+    Args:
+        workdir (str): Directory to save checkpoint
+        epoch (int): Current epoch number
+        model: Model instance
+        optimizer: Optimizer instance
+    """
+    checkpoint = {
+        'epoch': epoch,
+        'model_state': model.named_parameters(),
+        'optimizer_state': optimizer.state
+    }
+
+    import pickle
+    checkpoint_path = f'{workdir}/checkpoint_epoch{epoch}.pkl'
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump(checkpoint, f)
+
+    # Also save as latest checkpoint for easy resuming
+    latest_path = f'{workdir}/checkpoint_latest.pkl'
+    with open(latest_path, 'wb') as f:
+        pickle.dump(checkpoint, f)
+
+    print(f'Saved checkpoint to {checkpoint_path}')
+
+
+def load_checkpoint(workdir, model, optimizer):
+    """
+    Load model and optimizer state from latest checkpoint.
+
+    Args:
+        workdir (str): Directory containing checkpoint
+        model: Model instance to load state into
+        optimizer: Optimizer instance to load state into
+
+    Returns:
+        int: Epoch number to resume from (next epoch), or 0 if no checkpoint found
+    """
+    import pickle
+    checkpoint_path = f'{workdir}/checkpoint_latest.pkl'
+
+    if not os.path.exists(checkpoint_path):
+        print('No checkpoint found, starting from scratch')
+        return 0
+
+    print(f'Loading checkpoint from {checkpoint_path}')
+    with open(checkpoint_path, 'rb') as f:
+        checkpoint = pickle.load(f)
+
+    # Restore model parameters
+    model_state = checkpoint['model_state']
+    for (name, param), (ckpt_name, ckpt_param) in zip(model.named_parameters(), model_state):
+        assert name == ckpt_name, f"Parameter name mismatch: {name} vs {ckpt_name}"
+        param.value._tensor = ckpt_param.value._tensor
+
+    # Restore optimizer state
+    optimizer.state = checkpoint['optimizer_state']
+
+    resume_epoch = checkpoint['epoch'] + 1
+    print(f'Resumed from epoch {checkpoint["epoch"]}, will continue from epoch {resume_epoch}')
+
+    return resume_epoch
+
+
 def collate_batch(
         examples, src_key, tgt_key, tokenizer, model_max_length, backend):
     """
@@ -478,7 +545,10 @@ def main(
         model_max_length=model_max_length,
         backend=backend)
 
-    for epoch_idx in range(n_epochs):
+    # Load checkpoint if exists and resume from last saved epoch
+    start_epoch = load_checkpoint(workdir, model, optimizer)
+
+    for epoch_idx in range(start_epoch, n_epochs):
         desc = f'epoch {epoch_idx} / {n_epochs}'
 
         train(
@@ -522,6 +592,9 @@ def main(
         json.dump(
             {'validation_loss': float(validation_loss), **eval_scores},
             open(f'{workdir}/eval_results_epoch{epoch_idx}.json', 'w'))
+
+        # Save checkpoint after each epoch
+        save_checkpoint(workdir, epoch_idx, model, optimizer)
 
 
 if __name__ == '__main__':
