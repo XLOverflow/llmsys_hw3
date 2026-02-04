@@ -34,3 +34,6 @@ Thumbs.db
 
 # Logs and outputs
 *.log
+
+# Dataset
+iwslt14/
