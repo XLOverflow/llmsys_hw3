@@ -148,7 +148,7 @@ def backpropagate(variable: Variable, deriv: Any) -> None:
         else:
             for parent, grad in node.chain_rule(derivatives[node.unique_id]):
                 if parent.unique_id not in derivatives:
-                    derivatives[parent.unique_id] = grad
+                    derivatives[parent.unique_id] = grad + 0.0
                 else:
                     derivatives[parent.unique_id] += grad
     # END ASSIGN2_1
