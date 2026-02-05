@@ -164,10 +164,29 @@ def save_checkpoint(workdir, epoch, model, optimizer):
         model: Model instance
         optimizer: Optimizer instance
     """
+    # Convert model parameters to numpy arrays for pickling
+    model_state = {}
+    for name, param in model.named_parameters():
+        model_state[name] = param.value.to_numpy()
+
+    # Convert optimizer state to picklable format
+    # Use parameter name as key (id(p) changes between runs)
+    optimizer_state = {}
+    for (name, param) in model.named_parameters():
+        param_id = id(param)
+        if param_id in optimizer._states:
+            state = optimizer._states[param_id]
+            optimizer_state[name] = {}
+            for key, value in state.items():
+                if key == 'step':
+                    optimizer_state[name][key] = value
+                else:
+                    optimizer_state[name][key] = value.to_numpy()
+
     checkpoint = {
         'epoch': epoch,
-        'model_state': model.named_parameters(),
-        'optimizer_state': optimizer.state
+        'model_state': model_state,
+        'optimizer_state': optimizer_state
     }
 
     import pickle
@@ -206,14 +225,37 @@ def load_checkpoint(workdir, model, optimizer):
     with open(checkpoint_path, 'rb') as f:
         checkpoint = pickle.load(f)
 
-    # Restore model parameters
+    # Restore model parameters from numpy arrays
     model_state = checkpoint['model_state']
-    for (name, param), (ckpt_name, ckpt_param) in zip(model.named_parameters(), model_state):
-        assert name == ckpt_name, f"Parameter name mismatch: {name} vs {ckpt_name}"
-        param.value._tensor = ckpt_param.value._tensor
+    for name, param in model.named_parameters():
+        if name in model_state:
+            # Convert numpy array back to tensor
+            param.value._tensor = minitorch.tensor_from_numpy(
+                model_state[name],
+                backend=param.value.backend
+            )._tensor
+        else:
+            print(f'Warning: Parameter {name} not found in checkpoint')
 
-    # Restore optimizer state
-    optimizer.state = checkpoint['optimizer_state']
+    # Restore optimizer state (keyed by param name -> remap to new id(p))
+    optimizer_state_np = checkpoint['optimizer_state']
+    backend = list(model.named_parameters())[0][1].value.backend
+
+    optimizer._states = {}
+    for name, param in model.named_parameters():
+        new_id = id(param)
+        if name in optimizer_state_np:
+            state = optimizer_state_np[name]
+            optimizer._states[new_id] = {}
+            for key, value in state.items():
+                if key == 'step':
+                    optimizer._states[new_id][key] = value
+                else:
+                    optimizer._states[new_id][key] = minitorch.tensor_from_numpy(
+                        value, backend=backend
+                    )
+        else:
+            optimizer._states[new_id] = {}
 
     resume_epoch = checkpoint['epoch'] + 1
     print(f'Resumed from epoch {checkpoint["epoch"]}, will continue from epoch {resume_epoch}')
@@ -444,10 +486,12 @@ def generate(
 
             # Get logits for the last position (next token prediction)
             seq_len = len(token_ids)
-            last_logits = logits[0, seq_len - 1, :]  # Shape: (vocab_size,)
+            # Convert to numpy for indexing (MiniTorch doesn't support mixed slice indexing)
+            logits_np = logits.to_numpy()  # Shape: (1, seq_len, vocab_size)
+            last_logits_np = logits_np[0, seq_len - 1, :]  # Shape: (vocab_size,)
 
             # Take argmax to get the predicted token ID
-            gen_id = int(last_logits.to_numpy().argmax())
+            gen_id = int(last_logits_np.argmax())
             # END ASSIGN3_4
 
             if gen_id == tokenizer.vocab[f'<eos_{tgt_key}>']:
