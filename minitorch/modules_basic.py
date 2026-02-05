@@ -27,7 +27,7 @@ class Embedding(Module):
             embedding_dim : The size of each embedding vector
 
         Attributes:
-            weight : The learnable weights of shape (num_embeddings, embedding_dim) initialized from N(0, 1).
+            weights : The learnable weights of shape (num_embeddings, embedding_dim) initialized from N(0, 1).
         """
         self.backend = backend
         self.num_embeddings = num_embeddings # Vocab size
