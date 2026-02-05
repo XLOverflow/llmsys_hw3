@@ -56,68 +56,6 @@ def get_dataset(dataset_name, model_max_length):
     return dataset, src_key, tgt_key
 
 
-def get_dataset_from_local(data_dir, model_max_length):
-    """
-    Load and preprocess IWSLT (de-en) dataset from local parallel corpus files.
-
-    Args:
-        data_dir (str): Directory containing parallel corpus files (train.de/en, valid.de/en, test.de/en)
-        model_max_length (int): Maximum sequence length for filtering examples
-
-    Returns:
-        tuple: (dataset, src_key, tgt_key) where:
-            - dataset: Dictionary with 'train', 'validation', 'test' splits
-            - src_key (str): Source language key ('de')
-            - tgt_key (str): Target language key ('en')
-    """
-    def load_parallel_corpus(de_file, en_file):
-        """Read parallel corpus files and return list of translation pairs."""
-        with open(de_file, 'r', encoding='utf-8') as f_de:
-            de_lines = [line.strip() for line in f_de]
-        with open(en_file, 'r', encoding='utf-8') as f_en:
-            en_lines = [line.strip() for line in f_en]
-
-        assert len(de_lines) == len(en_lines), \
-            f"Mismatched line counts: {len(de_lines)} vs {len(en_lines)}"
-
-        return [{'de': de, 'en': en} for de, en in zip(de_lines, en_lines)]
-
-    # Load all splits from local files
-    dataset = {
-        'train': load_parallel_corpus(
-            os.path.join(data_dir, 'train.de'),
-            os.path.join(data_dir, 'train.en')
-        ),
-        'validation': load_parallel_corpus(
-            os.path.join(data_dir, 'valid.de'),
-            os.path.join(data_dir, 'valid.en')
-        ),
-        'test': load_parallel_corpus(
-            os.path.join(data_dir, 'test.de'),
-            os.path.join(data_dir, 'test.en')
-        )
-    }
-    src_key, tgt_key = 'de', 'en'
-
-    # Filter by length
-    dataset = {
-        split: [
-            example for example in dataset[split]
-            if len(example[src_key].split()) + len(
-                example[tgt_key].split()) < model_max_length
-        ] for split in dataset.keys()
-    }
-
-    # Limit test set to 100 examples
-    dataset['test'] = dataset['test'][:100]
-
-    print(json.dumps(
-        {'data_size': {split: len(dataset[split]) for split in dataset.keys()}},
-        indent=4))
-
-    return dataset, src_key, tgt_key
-
-
 def get_tokenizer(examples, vocab_size, src_key, tgt_key, workdir):
     """
     Train and save a ByteLevelBPETokenizer on the provided dataset.
@@ -571,8 +509,8 @@ def main(
     model = DecoderLM(**config)
     optimizer = minitorch.Adam(model.parameters(), lr=learning_rate)
 
-    dataset, src_key, tgt_key = get_dataset_from_local(
-        data_dir='./iwslt14', model_max_length=model_max_length)
+    dataset, src_key, tgt_key = get_dataset(
+        dataset_name=dataset_name, model_max_length=model_max_length)
 
     tokenizer = get_tokenizer(
         examples=dataset['train'],
